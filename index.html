@@ -129,7 +129,7 @@
       });
 
       // 위경도 표시
-      coordsEl.textContent = `위도: ${latlng.getLat().toFixed(6)}, 경도: ${latlng.getLng().toFixed(6)}`;
+      coordsEl.textContent = `위도: ${latlng.getLat().toFixed(8)}, 경도: ${latlng.getLng().toFixed(8)}`;
 
       // 주소 검색
       geocoder.coord2Address(latlng.getLng(), latlng.getLat(), function(result, status) {
