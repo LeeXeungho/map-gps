@@ -112,6 +112,27 @@
     const addressEl = document.getElementById('address');
     const angleEl = document.getElementById('angle');
 
+    kakao.maps.event.addListener(map, 'rightclick', function() {
+      if (marker) {
+        marker.setMap(null);
+        marker = null;
+      }
+      if (circle) {
+        circle.setMap(null);
+        circle = null;
+      }
+      if (line) {
+        line.setMap(null);
+        line = null;
+      }
+
+      cctvBaseLatLng = null;
+      coordsEl.textContent = '위도: -, 경도: -';
+      addressEl.textContent = '주소: -';
+      angleEl.textContent = '각도: -';
+    });
+
+    
     // 지도 클릭 시 기준점 설정
     kakao.maps.event.addListener(map, 'click', function(mouseEvent) {
       const latlng = mouseEvent.latLng;
