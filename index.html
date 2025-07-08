@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8">
-  <title>카카오맵 CCTV 각도 표시</title>
+  <title>카카오맵 CCTV 시뮬레이터</title>
   <style>
     html, body {
       height: 100%;
@@ -10,12 +10,10 @@
       padding: 0;
       font-family: sans-serif;
     }
-
     #map {
       width: 100%;
       height: 100%;
     }
-
     #info, .map-type-buttons, .controls {
       position: absolute;
       z-index: 2;
@@ -25,22 +23,18 @@
       padding: 10px;
       font-size: 14px;
     }
-
     #info {
       top: 10px;
       left: 10px;
     }
-
     .map-type-buttons {
       top: 110px;
       left: 10px;
     }
-
     .controls {
       top: 190px;
       left: 10px;
     }
-
     button {
       width: 100%;
       padding: 8px;
@@ -50,11 +44,9 @@
       border-radius: 4px;
       cursor: pointer;
     }
-
     button:hover {
       background-color: #e0e0e0;
     }
-
     #keyword {
       width: 100%;
       padding: 6px;
@@ -74,82 +66,60 @@
     📷 <span id="angle">각도: -</span>
   </div>
 
-  <!-- 지도 타입 선택 -->
+  <!-- 지도 타입 -->
   <div class="map-type-buttons">
     <button onclick="setMapType('roadmap')">🗺️ 일반지도</button>
     <button onclick="setMapType('skyview')">🛰️ 위성지도</button>
   </div>
 
-  <!-- 검색 및 현재 위치 -->
+  <!-- 검색 / 현재 위치 -->
   <div class="controls">
     <input type="text" id="keyword" placeholder="주소 또는 장소 입력">
     <button onclick="searchAddress()">🔍 주소 검색</button>
     <button onclick="goToCurrentLocation()">📍 현재 위치로 이동</button>
   </div>
 
-  <!-- 지도 -->
+  <!-- 지도 영역 -->
   <div id="map"></div>
 
-  <!-- 카카오맵 API -->
-  <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c543ee5ba7572b86f82336d8d7056630&libraries=services"></script>
+  <!-- 카카오맵 API (services + geometry 포함) -->
+  <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=당신의_APPKEY&libraries=services,geometry"></script>
   <script>
     const mapContainer = document.getElementById('map');
-    const mapOption = {
+    const map = new kakao.maps.Map(mapContainer, {
       center: new kakao.maps.LatLng(37.5665, 126.9780), // 서울 시청
       level: 3
-    };
+    });
 
-    const map = new kakao.maps.Map(mapContainer, mapOption);
     const geocoder = new kakao.maps.services.Geocoder();
     const places = new kakao.maps.services.Places();
 
-    let marker = null;         // 마커 1개만
-    let cctvBaseLatLng = null; // 기준점
-    let circle = null;         // 원 객체
-    let line = null;           // 선 객체
+    let marker = null;
+    let circle = null;
+    let line = null;
+    let cctvBaseLatLng = null;
 
     const coordsEl = document.getElementById('coords');
     const addressEl = document.getElementById('address');
     const angleEl = document.getElementById('angle');
 
-    kakao.maps.event.addListener(map, 'rightclick', function() {
-      if (marker) {
-        marker.setMap(null);
-        marker = null;
-      }
-      if (circle) {
-        circle.setMap(null);
-        circle = null;
-      }
-      if (line) {
-        line.setMap(null);
-        line = null;
-      }
-
-      cctvBaseLatLng = null;
-      coordsEl.textContent = '위도: -, 경도: -';
-      addressEl.textContent = '주소: -';
-      angleEl.textContent = '각도: -';
-    });
-
-    
-    // 지도 클릭 시 기준점 설정
+    // 지도 클릭: 기준점 설정
     kakao.maps.event.addListener(map, 'click', function(mouseEvent) {
       const latlng = mouseEvent.latLng;
       cctvBaseLatLng = latlng;
 
-      // 마커 초기화 후 다시 추가
+      // 마커 1개만 유지
       if (marker) marker.setMap(null);
       marker = new kakao.maps.Marker({
         position: latlng,
         map: map
       });
 
-      // 원 생성 또는 업데이트
+      // 원 생성 또는 초기화
       if (circle) circle.setMap(null);
       circle = new kakao.maps.Circle({
         center: latlng,
-        radius: 100, // 단위: 미터
+        radius: 50, // 초기값, mousemove에서 수정됨
         strokeWeight: 2,
         strokeColor: '#3399ff',
         strokeOpacity: 0.8,
@@ -161,7 +131,7 @@
       // 위경도 표시
       coordsEl.textContent = `위도: ${latlng.getLat().toFixed(6)}, 경도: ${latlng.getLng().toFixed(6)}`;
 
-      // 주소 표시
+      // 주소 검색
       geocoder.coord2Address(latlng.getLng(), latlng.getLat(), function(result, status) {
         if (status === kakao.maps.services.Status.OK) {
           const address = result[0].address?.address_name || '주소 없음';
@@ -170,24 +140,25 @@
       });
 
       // 각도 초기화
-      angleEl.textContent = `각도: 0°`;
+      angleEl.textContent = '각도: 0°';
 
-      // 선 제거
+      // 기존 선 제거
       if (line) {
         line.setMap(null);
         line = null;
       }
     });
 
-    // 마우스 이동 시 각도 + 선 표시
+    // 마우스 이동: 각도 + 선 + 원 반지름 갱신
     kakao.maps.event.addListener(map, 'mousemove', function(mouseEvent) {
       if (!cctvBaseLatLng) return;
-
       const target = mouseEvent.latLng;
+
+      // 각도 계산
       const angle = calculateAngle(cctvBaseLatLng, target);
       angleEl.textContent = `각도: ${angle.toFixed(1)}°`;
 
-      // 선 업데이트
+      // 선 갱신
       if (line) line.setMap(null);
       line = new kakao.maps.Polyline({
         path: [cctvBaseLatLng, target],
@@ -197,9 +168,27 @@
         strokeStyle: 'solid',
         map: map
       });
+
+      // 거리 계산 → 원 반지름 업데이트
+      const distance = kakao.maps.geometry.spherical.computeDistance(cctvBaseLatLng, target);
+      if (circle) {
+        circle.setRadius(distance);
+      }
     });
 
-    // 각도 계산
+    // 마우스 우클릭: 전체 초기화
+    kakao.maps.event.addListener(map, 'rightclick', function() {
+      if (marker) { marker.setMap(null); marker = null; }
+      if (circle) { circle.setMap(null); circle = null; }
+      if (line) { line.setMap(null); line = null; }
+
+      cctvBaseLatLng = null;
+      coordsEl.textContent = '위도: -, 경도: -';
+      addressEl.textContent = '주소: -';
+      angleEl.textContent = '각도: -';
+    });
+
+    // 각도 계산 함수 (북쪽 기준, 시계방향)
     function calculateAngle(base, target) {
       const dx = target.getLng() - base.getLng();
       const dy = target.getLat() - base.getLat();
@@ -239,7 +228,7 @@
       }
     }
 
-    // 지도 타입 변경
+    // 지도 타입 설정
     function setMapType(type) {
       if (type === 'roadmap') {
         map.setMapTypeId(kakao.maps.MapTypeId.ROADMAP);
