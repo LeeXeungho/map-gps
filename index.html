@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8">
-  <title>카카오맵 CCTV 방향 표시</title>
+  <title>카카오맵 CCTV 각도 표시</title>
   <style>
     html, body {
       height: 100%;
@@ -67,7 +67,7 @@
 </head>
 <body>
 
-  <!-- 상단 정보 표시 -->
+  <!-- 정보 표시 -->
   <div id="info">
     📍 <span id="coords">위도: -, 경도: -</span><br>
     🏠 <span id="address">주소: -</span><br>
@@ -87,10 +87,10 @@
     <button onclick="goToCurrentLocation()">📍 현재 위치로 이동</button>
   </div>
 
-  <!-- 지도 영역 -->
+  <!-- 지도 -->
   <div id="map"></div>
 
-  <!-- 카카오맵 스크립트 -->
+  <!-- 카카오맵 API -->
   <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c543ee5ba7572b86f82336d8d7056630&libraries=services"></script>
   <script>
     const mapContainer = document.getElementById('map');
@@ -103,67 +103,88 @@
     const geocoder = new kakao.maps.services.Geocoder();
     const places = new kakao.maps.services.Places();
 
-    let markers = [];
-    let cctvBaseLatLng = null;
+    let marker = null;         // 마커 1개만
+    let cctvBaseLatLng = null; // 기준점
+    let circle = null;         // 원 객체
+    let line = null;           // 선 객체
+
     const coordsEl = document.getElementById('coords');
     const addressEl = document.getElementById('address');
     const angleEl = document.getElementById('angle');
 
-    // 지도 클릭: 마커 + 주소 + 기준점 설정
+    // 지도 클릭 시 기준점 설정
     kakao.maps.event.addListener(map, 'click', function(mouseEvent) {
       const latlng = mouseEvent.latLng;
-      addMarker(latlng, true);
       cctvBaseLatLng = latlng;
-      angleEl.textContent = "각도: 0°";
+
+      // 마커 초기화 후 다시 추가
+      if (marker) marker.setMap(null);
+      marker = new kakao.maps.Marker({
+        position: latlng,
+        map: map
+      });
+
+      // 원 생성 또는 업데이트
+      if (circle) circle.setMap(null);
+      circle = new kakao.maps.Circle({
+        center: latlng,
+        radius: 100, // 단위: 미터
+        strokeWeight: 2,
+        strokeColor: '#3399ff',
+        strokeOpacity: 0.8,
+        fillColor: '#cce6ff',
+        fillOpacity: 0.4,
+        map: map
+      });
+
+      // 위경도 표시
+      coordsEl.textContent = `위도: ${latlng.getLat().toFixed(6)}, 경도: ${latlng.getLng().toFixed(6)}`;
+
+      // 주소 표시
+      geocoder.coord2Address(latlng.getLng(), latlng.getLat(), function(result, status) {
+        if (status === kakao.maps.services.Status.OK) {
+          const address = result[0].address?.address_name || '주소 없음';
+          addressEl.textContent = `주소: ${address}`;
+        }
+      });
+
+      // 각도 초기화
+      angleEl.textContent = `각도: 0°`;
+
+      // 선 제거
+      if (line) {
+        line.setMap(null);
+        line = null;
+      }
     });
 
-    // 마우스 움직일 때 CCTV 각도 표시
+    // 마우스 이동 시 각도 + 선 표시
     kakao.maps.event.addListener(map, 'mousemove', function(mouseEvent) {
       if (!cctvBaseLatLng) return;
+
       const target = mouseEvent.latLng;
       const angle = calculateAngle(cctvBaseLatLng, target);
       angleEl.textContent = `각도: ${angle.toFixed(1)}°`;
+
+      // 선 업데이트
+      if (line) line.setMap(null);
+      line = new kakao.maps.Polyline({
+        path: [cctvBaseLatLng, target],
+        strokeWeight: 3,
+        strokeColor: 'red',
+        strokeOpacity: 0.9,
+        strokeStyle: 'solid',
+        map: map
+      });
     });
 
-    // 각도 계산 (북쪽 기준, 시계방향 0~360°)
+    // 각도 계산
     function calculateAngle(base, target) {
       const dx = target.getLng() - base.getLng();
       const dy = target.getLat() - base.getLat();
       let theta = Math.atan2(dx, dy) * (180 / Math.PI);
       if (theta < 0) theta += 360;
       return theta;
-    }
-
-    // 마커 추가
-    function addMarker(position, fetchAddress = false) {
-      const marker = new kakao.maps.Marker({ map: map, position });
-      markers.push(marker);
-
-      const lat = position.getLat().toFixed(6);
-      const lng = position.getLng().toFixed(6);
-      coordsEl.textContent = `위도: ${lat}, 경도: ${lng}`;
-
-      if (fetchAddress) {
-        geocoder.coord2Address(position.getLng(), position.getLat(), function(result, status) {
-          if (status === kakao.maps.services.Status.OK) {
-            const address = result[0].address?.address_name || '주소 없음';
-            addressEl.textContent = `주소: ${address}`;
-            const infoWindow = new kakao.maps.InfoWindow({
-              content: `<div style="padding:5px; font-size:13px;">${address}</div>`
-            });
-            infoWindow.open(map, marker);
-          }
-        });
-      }
-    }
-
-    // 지도 타입 설정
-    function setMapType(type) {
-      if (type === 'roadmap') {
-        map.setMapTypeId(kakao.maps.MapTypeId.ROADMAP);
-      } else if (type === 'skyview') {
-        map.setMapTypeId(kakao.maps.MapTypeId.HYBRID);
-      }
     }
 
     // 주소 검색
@@ -177,7 +198,6 @@
         if (status === kakao.maps.services.Status.OK) {
           const pos = new kakao.maps.LatLng(results[0].y, results[0].x);
           map.setCenter(pos);
-          addMarker(pos, true);
         } else {
           alert('검색 결과가 없습니다.');
         }
@@ -190,12 +210,20 @@
         navigator.geolocation.getCurrentPosition(function(position) {
           const latlng = new kakao.maps.LatLng(position.coords.latitude, position.coords.longitude);
           map.setCenter(latlng);
-          addMarker(latlng, true);
         }, function() {
           alert('위치 정보를 가져올 수 없습니다.');
         });
       } else {
         alert('브라우저가 위치 정보를 지원하지 않습니다.');
+      }
+    }
+
+    // 지도 타입 변경
+    function setMapType(type) {
+      if (type === 'roadmap') {
+        map.setMapTypeId(kakao.maps.MapTypeId.ROADMAP);
+      } else if (type === 'skyview') {
+        map.setMapTypeId(kakao.maps.MapTypeId.HYBRID);
       }
     }
   </script>
